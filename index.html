@@ -81,12 +81,6 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .joker-card .symbol{font-size:3.6rem}
 .joker-card .label{font-family:Georgia,serif;font-size:1.25rem;font-weight:900}
 .leader{text-align:right}.leader strong{display:block;color:#4ade80;font-size:1.25rem}
-.entry-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:18px 0}
-.score-card{
-  position:relative;background:rgba(255,255,255,.045);border:1px solid var(--line);
-  border-top:4px solid var(--player);border-radius:17px;padding:15px
-}
-.score-card h3{margin:0 0 10px;display:flex;align-items:center;gap:8px}
 .dot{width:11px;height:11px;border-radius:50%;background:var(--player);display:inline-block}
 .wipe-row{
   display:flex;align-items:center;gap:10px;margin-top:12px;padding:11px 12px;
@@ -295,7 +289,6 @@ th:first-child{z-index:4;background:#203958}
     <div class="joker-card"><div id="cardCorner" class="corner"></div><div class="symbol">🃏</div><div id="cardLabel" class="label"></div></div>
     <div class="leader"><span class="small">Currently lowest</span><strong id="leaderText"></strong></div>
   </div>
-  <div id="scoreEntry" class="entry-grid"></div>
   <div class="actions">
     <button id="completeRoundBtn" class="primary">Complete round →</button>
     <button id="editRoundBtn" class="secondary">✎ Edit previous round</button>
@@ -412,18 +405,10 @@ function startGame(){
 function renderGame(){
  hideAll();$("gameScreen").classList.remove("hidden");updateDeck();
  if(state.finished){renderTables();showWinner();return}
- const r=rounds[state.currentRound],totals=totalsAfter();
+ const r=rounds[state.currentRound];
  $("roundMeta").textContent=`Round ${state.currentRound+1} of ${rounds.length}`;
  $("roundTitle").textContent=`Joker: ${r.name}`;$("cardCorner").textContent=r.short;$("cardLabel").textContent=r.name;
  $("gameDeckInfo").textContent=`${state.players.length} players • ${deckCount(state.players.length)} deck${deckCount(state.players.length)===1?"":"s"}`;
- $("scoreEntry").innerHTML=state.players.map(p=>`<div class="score-card" style="--player:${p.color}"><h3><span class="dot"></span>${esc(p.name)}</h3><label class="small">Points this round</label><input data-score="${p.id}" type="number" min="0" step="1" inputmode="numeric" value="0"><label class="wipe-row">
-  <input data-wipe="${p.id}" type="checkbox">
-  <span class="wipe-copy">
-    <span>Wipe score to 0</span>
-    <small>Seven-card run in the same suit</small>
-  </span>
-</label><div class="small" style="margin-top:8px">Current total: <strong>${totals[p.id]}</strong></div></div>`).join("");
- state.players.forEach(p=>bindWipe(document.querySelector(`[data-score="${p.id}"]`),document.querySelector(`[data-wipe="${p.id}"]`)));
  renderLeader();renderTables();$("undoBtn").disabled=!state.results.length;$("editRoundBtn").disabled=!state.results.length
 }
 function bindWipe(score,check){
@@ -431,10 +416,34 @@ function bindWipe(score,check){
 }
 function renderLeader(){const t=totalsAfter(),vals=Object.values(t);if(!vals.length)return;const min=Math.min(...vals),leaders=state.players.filter(p=>t[p.id]===min).map(p=>p.name);$("leaderText").textContent=leaders.length===state.players.length?"Everyone is tied":`${leaders.join(" & ")} (${min})`}
 function completeRound(){
- const entries={};for(const p of state.players){const s=document.querySelector(`[data-score="${p.id}"]`),w=document.querySelector(`[data-wipe="${p.id}"]`),wipe=w.checked,points=wipe?0:Number(s.value);if(!wipe&&(!Number.isInteger(points)||points<0)){s.focus();return notice(`Enter a valid score for ${p.name}.`)}entries[p.id]={points,wipe}}
- state.results[state.currentRound]={roundName:rounds[state.currentRound].name,entries};state.currentRound++;
- if(state.currentRound>=rounds.length){state.finished=true;state.completedAt=new Date().toISOString()}saveState();
- if(state.finished){archiveGame();renderTables();showWinner()}else{renderGame();notice("Round saved.")}
+ const entries={};
+ for(const p of state.players){
+   const scoreInput=document.querySelector(`[data-current-score="${p.id}"]`);
+   const wipeInput=document.querySelector(`[data-current-wipe="${p.id}"]`);
+   if(!scoreInput||!wipeInput)return notice("Current round inputs are unavailable.");
+   const wipe=wipeInput.checked;
+   const points=wipe?0:Number(scoreInput.value);
+   if(!wipe&&(!Number.isInteger(points)||points<0)){
+     scoreInput.focus();
+     return notice(`Enter a valid score for ${p.name}.`);
+   }
+   entries[p.id]={points,wipe};
+ }
+ state.results[state.currentRound]={roundName:rounds[state.currentRound].name,entries};
+ state.currentRound++;
+ if(state.currentRound>=rounds.length){
+   state.finished=true;
+   state.completedAt=new Date().toISOString();
+ }
+ saveState();
+ if(state.finished){
+   archiveGame();
+   renderTables();
+   showWinner();
+ }else{
+   renderGame();
+   notice("Round saved.");
+ }
 }
 function undoRound(){if(!state.results.length)return;state.currentRound=Math.max(0,state.currentRound-1);state.results.splice(state.currentRound);state.finished=false;state.archived=false;delete state.archiveId;delete state.completedAt;saveState();renderGame();notice("Previous round removed.")}
 function cell(entry,running){
@@ -443,8 +452,31 @@ function cell(entry,running){
  const n=running+Number(entry.points||0);return{html:`<strong>${n}</strong><span class="round-points">+${entry.points}</span>`,next:n}
 }
 function buildDesktopTable(results,players,current=-1){
- const headers=rounds.map((r,i)=>`<th class="${i===current?"current-col":""}">${r.name}</th>`).join("");let body="";
- players.forEach(p=>{let running=0,cells="";rounds.forEach((r,i)=>{const c=cell(results[i]?.entries?.[p.id],running);running=c.next;cells+=`<td class="${c.wipe?"wipe-cell ":""}${i===current?"current-col":""}">${c.html}</td>`});body+=`<tr><td class="player-name-cell" style="--player:${p.color}"><span class="dot" style="background:${p.color}"></span> ${esc(p.name)}</td>${cells}<td><strong>${running}</strong></td></tr>`});
+ const headers=rounds.map((r,i)=>`<th class="${i===current?"current-col":""}">${r.name}</th>`).join("");
+ let body="";
+ players.forEach(p=>{
+   let running=0,cells="";
+   rounds.forEach((r,i)=>{
+     const entry=results[i]?.entries?.[p.id];
+     if(i===current && !entry && !state.finished){
+       cells+=`<td class="current-col">
+         <div class="mobile-edit-cell">
+           <input class="mobile-score-input" data-current-score="${p.id}" type="number" min="0" step="1" inputmode="numeric" value="0">
+           <label class="mobile-wipe-toggle">
+             <input data-current-wipe="${p.id}" type="checkbox">
+             <span>Wipe</span>
+           </label>
+           <span class="mobile-running">Current ${running}</span>
+         </div>
+       </td>`;
+     }else{
+       const c=cell(entry,running);
+       running=c.next;
+       cells+=`<td class="${c.wipe?"wipe-cell ":""}${i===current?"current-col":""}">${c.html}</td>`;
+     }
+   });
+   body+=`<tr><td class="player-name-cell" style="--player:${p.color}"><span class="dot" style="background:${p.color}"></span> ${esc(p.name)}</td>${cells}<td><strong>${running}</strong></td></tr>`;
+ });
  return `<thead><tr><th>Player</th>${headers}<th>Total</th></tr></thead><tbody>${body}</tbody>`
 }
 function shortPlayerName(name){
@@ -461,25 +493,38 @@ function buildMobileTable(results,players,current=-1){
    let cells="";
    players.forEach(p=>{
      const entry=results[i]?.entries?.[p.id];
-     if(entry){
-       if(entry.wipe) running[p.id]=0;
-       else running[p.id]+=Number(entry.points||0);
+     if(i===current && !entry && !state.finished){
+       cells+=`<td class="current-col">
+         <div class="mobile-edit-cell">
+           <input class="mobile-score-input" data-current-score="${p.id}" type="number" min="0" step="1" inputmode="numeric" value="0">
+           <label class="mobile-wipe-toggle">
+             <input data-current-wipe="${p.id}" type="checkbox">
+             <span>Wipe</span>
+           </label>
+           <span class="mobile-running">Current ${running[p.id]}</span>
+         </div>
+       </td>`;
+     }else{
+       if(entry){
+         if(entry.wipe)running[p.id]=0;
+         else running[p.id]+=Number(entry.points||0);
+       }
+       const editable=Boolean(entry);
+       cells+=`<td class="${entry?.wipe?"wipe-cell ":""}${i===current?"current-col":""}">
+         <div class="mobile-edit-cell">
+           ${editable
+             ? `<input class="mobile-score-input" data-mobile-score="${p.id}" data-round-index="${i}" type="number" min="0" step="1" value="${entry.wipe?0:entry.points}" ${entry.wipe?"disabled":""}>`
+             : `<span>—</span>`}
+           ${editable
+             ? `<label class="mobile-wipe-toggle">
+                  <input data-mobile-wipe="${p.id}" data-round-index="${i}" type="checkbox" ${entry.wipe?"checked":""}>
+                  <span>Wipe</span>
+                </label>`
+             : ``}
+           <span class="mobile-running">Total ${running[p.id]}</span>
+         </div>
+       </td>`;
      }
-     const editable=Boolean(entry);
-     cells+=`<td class="${entry?.wipe?"wipe-cell ":""}${i===current?"current-col":""}">
-       <div class="mobile-edit-cell">
-         ${editable
-           ? `<input class="mobile-score-input" data-mobile-score="${p.id}" data-round-index="${i}" type="number" min="0" step="1" value="${entry.wipe?0:entry.points}" ${entry.wipe?"disabled":""}>`
-           : `<span>—</span>`}
-         ${editable
-           ? `<label class="mobile-wipe-toggle">
-                <input data-mobile-wipe="${p.id}" data-round-index="${i}" type="checkbox" ${entry.wipe?"checked":""}>
-                <span>Wipe</span>
-              </label>`
-           : ``}
-         <span class="mobile-running">Total ${running[p.id]}</span>
-       </div>
-     </td>`;
    });
    rows+=`<tr><td>${r.name}</td>${cells}</tr>`;
  });
@@ -488,7 +533,36 @@ function buildMobileTable(results,players,current=-1){
 function renderTables(){
  $("scoreTable").innerHTML=buildDesktopTable(state.results,state.players,state.currentRound);
  $("mobileScoreTable").innerHTML=buildMobileTable(state.results,state.players,state.currentRound);
+ bindCurrentRoundInputs();
  bindMobileTableEditing();
+}
+function bindCurrentRoundInputs(){
+ document.querySelectorAll("[data-current-wipe]").forEach(toggle=>{
+   toggle.addEventListener("change",()=>{
+     const playerId=toggle.dataset.currentWipe;
+     document.querySelectorAll(`[data-current-score="${playerId}"]`).forEach(score=>{
+       if(toggle.checked){
+         score.dataset.old=score.value;
+         score.value=0;
+         score.disabled=true;
+       }else{
+         score.disabled=false;
+         score.value=score.dataset.old||0;
+       }
+     });
+     document.querySelectorAll(`[data-current-wipe="${playerId}"]`).forEach(other=>{
+       if(other!==toggle)other.checked=toggle.checked;
+     });
+   });
+ });
+ document.querySelectorAll("[data-current-score]").forEach(input=>{
+   input.addEventListener("input",()=>{
+     const playerId=input.dataset.currentScore;
+     document.querySelectorAll(`[data-current-score="${playerId}"]`).forEach(other=>{
+       if(other!==input&&!other.disabled)other.value=input.value;
+     });
+   });
+ });
 }
 function bindMobileTableEditing(){
  document.querySelectorAll("[data-mobile-score]").forEach(input=>{
