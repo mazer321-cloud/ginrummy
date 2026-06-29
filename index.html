@@ -160,10 +160,97 @@ th:first-child{z-index:4;background:#203958}
 @media(max-width:820px){
   .setup-grid,.game-head{grid-template-columns:1fr}.leader{text-align:center}.game-head{text-align:center}
   .joker-card{width:125px;height:174px}.app{padding:10px}.panel{padding:14px}
-  .desktop-score-table{display:none}.mobile-score-table{display:table;min-width:max-content;width:100%}
-  .mobile-score-table th,.mobile-score-table td{min-width:110px;padding:10px 8px}
-  .mobile-score-table th:first-child,.mobile-score-table td:first-child{min-width:100px}
-  .table-wrap{max-height:56vh}
+  .desktop-score-table{display:none}
+  .mobile-score-table{
+    display:table;
+    width:100%;
+    min-width:0;
+    table-layout:fixed
+  }
+  .mobile-score-table th,
+  .mobile-score-table td{
+    min-width:0;
+    width:auto;
+    padding:7px 4px;
+    white-space:normal;
+    overflow:hidden
+  }
+  .mobile-score-table th:first-child,
+  .mobile-score-table td:first-child{
+    width:74px;
+    min-width:74px
+  }
+  .mobile-score-table th{
+    font-size:.72rem;
+    line-height:1.05;
+    word-break:break-word
+  }
+  .mobile-score-table td{
+    font-size:.78rem
+  }
+  .mobile-edit-cell{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    align-items:center
+  }
+  .mobile-score-input{
+    width:100%;
+    min-width:0;
+    border:1px solid rgba(255,255,255,.16);
+    background:rgba(5,13,27,.72);
+    color:white;
+    border-radius:8px;
+    padding:6px 3px;
+    text-align:center;
+    font-size:.85rem
+  }
+  .mobile-wipe-toggle{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:3px;
+    width:100%;
+    font-size:.62rem;
+    color:#fda4af;
+    cursor:pointer
+  }
+  .mobile-wipe-toggle input{
+    appearance:none;
+    -webkit-appearance:none;
+    width:24px;
+    height:14px;
+    border-radius:999px;
+    background:#334155;
+    position:relative;
+    flex:0 0 auto
+  }
+  .mobile-wipe-toggle input::after{
+    content:"";
+    position:absolute;
+    width:10px;
+    height:10px;
+    left:2px;
+    top:2px;
+    border-radius:50%;
+    background:white;
+    transition:.18s
+  }
+  .mobile-wipe-toggle input:checked{
+    background:#e11d48
+  }
+  .mobile-wipe-toggle input:checked::after{
+    transform:translateX(10px)
+  }
+  .mobile-running{
+    display:block;
+    font-size:.62rem;
+    color:var(--muted)
+  }
+  .table-wrap{
+    max-height:none;
+    overflow-x:hidden
+  }
 }
 @media(max-width:480px){
   .nav{width:100%}.nav>*{flex:1;justify-content:center;text-align:center}
@@ -360,12 +447,84 @@ function buildDesktopTable(results,players,current=-1){
  players.forEach(p=>{let running=0,cells="";rounds.forEach((r,i)=>{const c=cell(results[i]?.entries?.[p.id],running);running=c.next;cells+=`<td class="${c.wipe?"wipe-cell ":""}${i===current?"current-col":""}">${c.html}</td>`});body+=`<tr><td class="player-name-cell" style="--player:${p.color}"><span class="dot" style="background:${p.color}"></span> ${esc(p.name)}</td>${cells}<td><strong>${running}</strong></td></tr>`});
  return `<thead><tr><th>Player</th>${headers}<th>Total</th></tr></thead><tbody>${body}</tbody>`
 }
-function buildMobileTable(results,players,current=-1){
- const running=Object.fromEntries(players.map(p=>[p.id,0]));let rows="";
- rounds.forEach((r,i)=>{let cells="";players.forEach(p=>{const c=cell(results[i]?.entries?.[p.id],running[p.id]);running[p.id]=c.next;cells+=`<td class="${c.wipe?"wipe-cell ":""}${i===current?"current-col":""}">${c.html}</td>`});rows+=`<tr><td>${r.name}</td>${cells}</tr>`});
- return `<thead><tr><th>Round</th>${players.map(p=>`<th style="border-top:4px solid ${p.color}">${esc(p.name)}</th>`).join("")}</tr></thead><tbody>${rows}<tr><td><strong>Total</strong></td>${players.map(p=>`<td><strong>${running[p.id]}</strong></td>`).join("")}</tr></tbody>`
+function shortPlayerName(name){
+ const clean=String(name).trim();
+ if(clean.length<=7)return clean;
+ const parts=clean.split(/\s+/);
+ if(parts.length>1)return parts.map(p=>p[0]).join("").slice(0,4).toUpperCase();
+ return clean.slice(0,6)+"…";
 }
-function renderTables(){$("scoreTable").innerHTML=buildDesktopTable(state.results,state.players,state.currentRound);$("mobileScoreTable").innerHTML=buildMobileTable(state.results,state.players,state.currentRound)}
+function buildMobileTable(results,players,current=-1){
+ const running=Object.fromEntries(players.map(p=>[p.id,0]));
+ let rows="";
+ rounds.forEach((r,i)=>{
+   let cells="";
+   players.forEach(p=>{
+     const entry=results[i]?.entries?.[p.id];
+     if(entry){
+       if(entry.wipe) running[p.id]=0;
+       else running[p.id]+=Number(entry.points||0);
+     }
+     const editable=Boolean(entry);
+     cells+=`<td class="${entry?.wipe?"wipe-cell ":""}${i===current?"current-col":""}">
+       <div class="mobile-edit-cell">
+         ${editable
+           ? `<input class="mobile-score-input" data-mobile-score="${p.id}" data-round-index="${i}" type="number" min="0" step="1" value="${entry.wipe?0:entry.points}" ${entry.wipe?"disabled":""}>`
+           : `<span>—</span>`}
+         ${editable
+           ? `<label class="mobile-wipe-toggle">
+                <input data-mobile-wipe="${p.id}" data-round-index="${i}" type="checkbox" ${entry.wipe?"checked":""}>
+                <span>Wipe</span>
+              </label>`
+           : ``}
+         <span class="mobile-running">Total ${running[p.id]}</span>
+       </div>
+     </td>`;
+   });
+   rows+=`<tr><td>${r.name}</td>${cells}</tr>`;
+ });
+ return `<thead><tr><th>Round</th>${players.map(p=>`<th style="border-top:4px solid ${p.color}" title="${esc(p.name)}">${esc(shortPlayerName(p.name))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody>`
+}
+function renderTables(){
+ $("scoreTable").innerHTML=buildDesktopTable(state.results,state.players,state.currentRound);
+ $("mobileScoreTable").innerHTML=buildMobileTable(state.results,state.players,state.currentRound);
+ bindMobileTableEditing();
+}
+function bindMobileTableEditing(){
+ document.querySelectorAll("[data-mobile-score]").forEach(input=>{
+   input.addEventListener("change",()=>{
+     const roundIndex=Number(input.dataset.roundIndex);
+     const playerId=input.dataset.mobileScore;
+     const value=Number(input.value);
+     if(!Number.isInteger(value)||value<0){
+       notice("Enter a valid score.");
+       renderTables();
+       return;
+     }
+     state.results[roundIndex].entries[playerId].points=value;
+     state.results[roundIndex].entries[playerId].wipe=false;
+     saveState();
+     if(state.finished)archiveGame();
+     renderTables();
+     renderLeader();
+     notice(`${rounds[roundIndex].name} updated.`);
+   });
+ });
+ document.querySelectorAll("[data-mobile-wipe]").forEach(toggle=>{
+   toggle.addEventListener("change",()=>{
+     const roundIndex=Number(toggle.dataset.roundIndex);
+     const playerId=toggle.dataset.mobileWipe;
+     const entry=state.results[roundIndex].entries[playerId];
+     entry.wipe=toggle.checked;
+     if(toggle.checked)entry.points=0;
+     saveState();
+     if(state.finished)archiveGame();
+     renderTables();
+     renderLeader();
+     notice(toggle.checked?"Score wiped to 0.":"Wipe removed.");
+   });
+ });
+}
 function openEdit(){
  if(!state.results.length)return;const sel=$("editRoundSelect");sel.innerHTML=state.results.map((r,i)=>`<option value="${i}">${rounds[i].name}</option>`).join("");sel.value=String(state.results.length-1);renderEditFields();$("editModal").classList.remove("hidden")
 }
