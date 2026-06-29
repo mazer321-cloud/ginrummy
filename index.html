@@ -153,7 +153,14 @@ th:first-child{z-index:4;background:#203958}
 .notice.show{opacity:1}
 @media(max-width:820px){
   .setup-grid,.game-head{grid-template-columns:1fr}.leader{text-align:center}.game-head{text-align:center}
-  .joker-card{width:125px;height:174px}.app{padding:10px}.panel{padding:14px}
+  .joker-card{
+    width:125px;
+    height:174px;
+    margin-left:auto;
+    margin-right:auto;
+    justify-self:center
+  }
+  .app{padding:10px}.panel{padding:14px}
   .desktop-score-table{display:none}
   .mobile-score-table{
     display:table;
